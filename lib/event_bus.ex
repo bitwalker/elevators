@@ -12,6 +12,9 @@ defmodule Elevators.EventBus do
   def add_handler(module, args) do
     GenEvent.add_handler(__MODULE__, module, args)
   end
+  def remove_handler(module, args) do
+    GenEvent.remove_handler(__MODULE__, module, args)
+  end
 
   @doc """
   An elevator has been initialized.
@@ -37,8 +40,8 @@ defmodule Elevators.EventBus do
   @doc """
   An elevator has started moving towards floor `goal`
   """
-  def moving(id, goal) do
-    GenEvent.notify(__MODULE__, {:moving, id, goal})
+  def moving(id, from, to) do
+    GenEvent.notify(__MODULE__, {:moving, id, from, to})
   end
 
   @doc """

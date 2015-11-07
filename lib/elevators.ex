@@ -3,8 +3,8 @@ defmodule Elevators do
   Client API for the :elevators application
   """
 
-  def create(id) do
-    GenServer.call(:elevator_scheduler, {:create, id})
+  def create(id, starting_floor \\ 1) do
+    GenServer.call(:elevator_scheduler, {:create, id, starting_floor})
   end
 
   def get_status(id) do
