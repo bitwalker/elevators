@@ -40,6 +40,7 @@ defmodule Elevators.Elevator do
   """
   @behaviour :gen_fsm
   require Logger
+  alias Elevators.EventBus
   alias Elevators.Elevator.State
 
   defmodule State do
@@ -56,7 +57,9 @@ defmodule Elevators.Elevator do
 
   def init([id: id, floor: floor, goal: goal, status: status]) do
     Logger.info "Initializing a new #{status} elevator on floor #{floor}, with goal: `#{inspect goal}`"
-    {:ok, status, %State{id: id, floor: floor, goal: goal, status: status}}
+    state = %State{id: id, floor: floor, goal: goal, status: status}
+    EventBus.initialized(id, state)
+    {:ok, status, state}
   end
 
   # Starts with doors closed
@@ -72,6 +75,7 @@ defmodule Elevators.Elevator do
   # Open them if closed and open is requested
   def closed(:open, state) do
     Logger.debug "Opening doors for #{state.id} on floor #{state.floor}"
+    EventBus.open(state.id)
     {:next_state, :open, %{state | :status => :open}}
   end
   # Ignore repeat close requests
@@ -86,7 +90,7 @@ defmodule Elevators.Elevator do
   # If someone requests a pickup from another floor, begin moving
   def closed({:pickup, from, to}, %State{goal: old_goal} = state) do
     Logger.debug "Elevator #{state.id} is starting to move towards pickup on floor #{from}"
-    #direction = get_direction(from, to)
+    EventBus.called(state.id, from, to)
     with_goal = %{state | :goal => old_goal ++ [{from, to}]}
     {:next_state, :closed, with_goal}
   end
@@ -108,6 +112,7 @@ defmodule Elevators.Elevator do
   # Close the doors if open
   def open(:closed, state) do
     Logger.debug "Closing doors for #{state.id} on floor #{state.floor}"
+    EventBus.closed(state.id)
     {:next_state, :closed, %{state | :status => :closed}}
   end
   # If someone requests a pickup from the current floor, open the doors
@@ -117,12 +122,13 @@ defmodule Elevators.Elevator do
   end
   def open({:pickup, from, to}, %State{goal: old_goal} = state) do
     Logger.debug "Closing doors on #{state.id} to begin moving"
-    #direction = get_direction(from, to)
+    EventBus.called(state.id, from, to)
     with_goal = %{state | :status => :closed, :goal => old_goal ++ [{from, to}]}
     {:next_state, :closed, with_goal}
   end
   def open(:step, state) do
     Logger.debug "Closing doors on #{state.id}"
+    EventBus.closed(state.id)
     {:next_state, :closed, %{state | :status => :closed}}
   end
   # Any other request is invalid in this context
@@ -146,6 +152,7 @@ defmodule Elevators.Elevator do
       to == approaching_floor ->
         {:next_state, :approaching, %{state | :status => :approaching, :floor => approaching_floor}}
       :else ->
+        EventBus.passing(state.id, to)
         Logger.debug "Elevator #{state.id} is passing floor #{approaching_floor}"
         {:next_state, :moving, %{state | :floor => approaching_floor}}
     end
@@ -156,6 +163,7 @@ defmodule Elevators.Elevator do
       from == approaching_floor ->
         {:next_state, :approaching, %{state | :status => :approaching, :floor => approaching_floor}}
       :else ->
+        EventBus.passing(state.id, from)
         Logger.debug "Elevator #{state.id} is passing floor #{approaching_floor}"
         {:next_state, :moving, %{state | :floor => approaching_floor}}
     end
@@ -167,7 +175,7 @@ defmodule Elevators.Elevator do
   # If someone requests a pickup from another floor, add it to the queue
   def moving({:pickup, from, to}, %State{goal: old_goal} = state) do
     Logger.debug "Received request for pickup from floor #{from} to floor #{to}"
-    #direction = get_direction(from, to)
+    EventBus.called(state.id, from, to)
     with_goal = %{state | :goal => old_goal ++ [{from, to}]}
     {:next_state, :moving, with_goal}
   end
@@ -183,10 +191,12 @@ defmodule Elevators.Elevator do
 
   def approaching(:step, %State{floor: floor, mode: :from, goal: [{floor, _}|_]} = state) do
     Logger.debug "Elevator #{state.id} is approaching it's destination floor of #{floor}"
+    EventBus.approaching(state.id, floor)
     {:next_state, :arrived, %{state | :status => :arrived}}
   end
   def approaching(:step, %State{floor: floor, mode: :to, goal: [{_, floor}|_]} = state) do
     Logger.debug "Elevator #{state.id} is approaching it's destination floor of #{floor}"
+    EventBus.approaching(state.id, floor)
     {:next_state, :arrived, %{state | :status => :arrived}}
   end
   # Ignore requests for the same floor
@@ -196,7 +206,7 @@ defmodule Elevators.Elevator do
   # If someone requests a pickup from another floor, add it to the queue
   def approaching({:pickup, from, to}, %State{goal: old_goal} = state) do
     Logger.debug "Received request for pickup from floor #{from} to floor #{to}"
-    #direction = get_direction(from, to)
+    EventBus.called(state.id, from, to)
     with_goal = %{state | :goal => old_goal ++ [{from, to}]}
     {:next_state, :approaching, with_goal}
   end
@@ -213,10 +223,12 @@ defmodule Elevators.Elevator do
 
   def arrived(:step, %State{floor: floor, mode: :from, goal: [{floor, _}|_] = goal} = state) do
     Logger.debug "Elevator #{state.id} has arrived on floor #{floor} for a pickup, and is opening it's doors"
+    EventBus.arrived(state.id, floor)
     {:next_state, :open, %{state | :status => :open, :mode => :to, :goal => goal}}
   end
   def arrived(:step, %State{floor: floor, mode: :to, goal: [{_, floor}|rest] = goal} = state) do
     Logger.debug "Elevator #{state.id} has arrived on floor #{floor} for a dropoff, and is opening it's doors"
+    EventBus.arrived(state.id, floor)
     {:next_state, :open, %{state | :status => :open, :mode => :from, :goal => rest}}
   end
   # Ignore requests for the same floor
@@ -226,7 +238,7 @@ defmodule Elevators.Elevator do
   # If someone requests a pickup from another floor, add it to the queue
   def arrived({:pickup, from, to}, %State{goal: old_goal} = state) do
     Logger.debug "Received request for pickup from floor #{from} to floor #{to}"
-    #direction = get_direction(from, to)
+    EventBus.called(state.id, from, to)
     with_goal = %{state | :goal => old_goal ++ [{from, to}]}
     {:next_state, :arrived, with_goal}
   end
