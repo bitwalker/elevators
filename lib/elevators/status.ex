@@ -7,5 +7,5 @@ defmodule Elevators.Status do
     - floor = integer (current floor)
     - goal  = [Goal]
   """
-  defstruct id: nil, pid: nil, floor: nil, goal: nil
+  defstruct id: nil, pid: nil, floor: nil, goal: nil, state: :unknown
 end

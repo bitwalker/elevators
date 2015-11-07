@@ -17,15 +17,15 @@ defmodule Elevators.Scheduler do
   end
 
   def handle_call({:create, id}, _from, %State{elevators: elevs} = state) do
-    {:ok, pid} = Elevator.start_link
+    {:ok, pid} = Elevator.start_link([id: id])
     {:reply, {:ok, id}, %{state | :elevators => HashDict.put(elevs, id, pid)}}
   end
 
   def handle_call({:get_status, id}, _from, %State{elevators: elevs} = state) do
     case HashDict.get(elevs, id) do
       pid when is_pid(pid) ->
-        {floor, goal} = :gen_fsm.sync_send_event(pid, :get_status)
-        result = {:ok, %Status{id: id, pid: pid, floor: floor, goal: goal}}
+        {status, floor, goal} = :gen_fsm.sync_send_event(pid, :get_status)
+        result = {:ok, %Status{id: id, pid: pid, floor: floor, goal: goal, state: status}}
         {:reply, result, state}
     end
   end

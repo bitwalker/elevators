@@ -8,7 +8,8 @@ defmodule Elevators.Mixfile do
   end
 
   def application do
-    [mod: { Elevators.App, [] }]
+    [mod: { Elevators.App, [] },
+     applications: [:logger]]
   end
 
   defp deps do
